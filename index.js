@@ -1,13 +1,21 @@
+//Require Express
 const express = require("express");
+//Function to use express
 const app = express();
+//Require bodyParser
 var bodyParser = require("body-parser");
+//Require Mongoose
 const mongoose = require("mongoose");
+//Require Bcrypt
 const bcrypt = require("bcrypt");
 //Require jsonwebtoken
 const jwt = require("jsonwebtoken");
+//Mongoose connection
 mongoose.connect("mongodb://localhost:27017/personsDB",{useNewUrlParser:true});
 var urlencodedParser = bodyParser.urlencoded({ extended: false });
-const saltRounds = 10; //Number of salt rounds is kept to 10;
+//Number of salt rounds is kept to 10;
+const saltRounds = 10;
+app.use(express.json())
 //Create a New Schema
 const personSchema = new mongoose.Schema({
     firstName:String,
@@ -20,8 +28,16 @@ const personSchema = new mongoose.Schema({
 const PORT = process.env.port||3001;
 //Use the Schema to create a mongoose model
 const Person = mongoose.model("Person",personSchema);
+var person = new Person({
+    firstName:"undefined",
+    lastName:"undefined",
+    email:"undefined",
+    phone:0000000000,
+    email:"undefined",
+    password:"undefined"
+})
 app.get("/",(req,res)=>{
-    res.sendFile("../static/index.html",{root:__dirname});
+    res.sendFile("index.html",{root:__dirname});
 })
 app.get("/", (req, res) => {
     res.json({ message: "Hello from server!" });
@@ -36,6 +52,7 @@ app.post("/",urlencodedParser,(req,res)=>{
     const phone = req.body.phone;
     const address = req.body.address;
     const password =req.body.password;
+    
     bcrypt.hash(password, saltRounds, (err, hash) => {
         //save the hash in the db
         if(err){
@@ -49,6 +66,7 @@ app.post("/",urlencodedParser,(req,res)=>{
         address:address,
         password:hash
     });
+    console.log(person)
     new Person(person).save((err)=>{
         if(err){
             res.send("<b>Could not register</b>");
@@ -59,32 +77,67 @@ app.post("/",urlencodedParser,(req,res)=>{
     })
       })   
 });
-function givePassword(password)
-{
-    return bcrypt.hash(password,saltRounds,(hash,err)=>{
-        if(!err){
-            return hash;
-        }
-    })
-}
+
 //Secret Key
 const accessTokenSecret = "myAccessTokenSecret";
-app.post("/login",urlencodedParser,(req,res)=>{
-    const email = req.body.email;
-    const password = req.body.password;
-    const user = Person.find({"email":email,"password":givePassword(password)})
-    if(user)
+const authenticateJWT = (req,res,next)=>{
+    const authheader = req.headers.authorization;
+    if(authheader)
     {
-        const jsonWebToken = jwt.sign({firstName:user.firstName,lastName:user.lastName,email:user.email,phone:user.phone,address:user.address},
-        accessTokenSecret);
-        console.log("Password is matched");
-        res.json({
-            jsonWebToken
+        const token = authheader.split('')[1];
+        jwt.verify(token,accessTokenSecret,(err,user)=>{
+            req.user = user;
+            next();
         })
     }else{
-        console.log("Password is incorrect");
+        res.sendStatus(401);
     }
+}
+
+app.post("/login",urlencodedParser,(req,res)=>{
+    const {email,password} = req.body;
+    var query = {email:email};
+    Person.findOne(query,(err,results)=>{
+        if(err)
+        {
+            console.log(err)
+        }
+        else{
+            if(results){
+            bcrypt.compare(password, results.password, function(error, response) {
+                if(response)
+                {
+                    person.firstName = results.firstName;
+                    person.lastName = results.lastName;
+                    person.phone = results.phone;
+                    person.address = results.address;
+                    console.log(person.firstName,person.lastName,person.phone,person.address);
+                    const jsonWebToken = jwt.sign({"email":results.email,"password":results.password},
+                    accessTokenSecret);
+                    console.log("Password is matched");
+                    res.json({
+                        jsonWebToken  
+                    })
+                }
+                else{
+                    console.log("Password is wrong");
+                }}
+                
+            )}
+            else{
+                console.log("Email does not exist");
+            } 
+        }})
 });
+app.get("/login/profile",authenticateJWT,(req,res)=>{
+    res.json({
+        "firstName":person.firstName,
+        "lastName":person.lastName,
+        "email":person.email,
+        "address":person.address,
+        "phone":person.phone
+    })
+})
 app.listen(PORT,(err)=>{
     if(!err)
     {
